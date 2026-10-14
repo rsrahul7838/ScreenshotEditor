@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Screenshot Editor</title>
+    <style>
+        body { font-family: Arial, sans-serif; margin: 24px; }
+        label { margin-right: 12px; }
+        .field { margin: 12px 0; }
+        #selectionArea { position: relative; display: inline-block; max-width: 100%; line-height: 0; touch-action: none; }
+        #screenshot { display: block; max-width: 100%; height: auto; user-select: none; -webkit-user-drag: none; }
+        #selectionBox { display: none; position: absolute; border: 2px dashed red; background: rgba(255, 0, 0, .12); box-sizing: border-box; pointer-events: none; }
+        #processedPreview { display: none; max-width: 100%; height: auto; border: 1px solid #ccc; }
+        .error { color: #b00020; }
+        .success { color: #176b2c; }
+        button:disabled { opacity: .55; cursor: not-allowed; }
+    </style>
+</head>
+<body>
+<h1>Screenshot Editor</h1>
+<p>Upload an image to begin.</p>
+
+<form action="/upload" method="post" enctype="multipart/form-data">
+    <h2>1. Select Screenshot</h2>
+    <label for="image">Choose PNG or JPG:</label>
+    <input type="file" id="image" name="image" accept="image/png,image/jpeg" required>
+    <button type="submit">Upload and Preview</button>
+</form>
+
+<div th:if="${error}" class="error"><p th:text="${error}"></p></div>
+<div th:if="${message}" class="success"><p th:text="${message}"></p></div>
+
+<div th:if="${imageData}">
+    <h2>2. Screenshot Preview</h2>
+    <p>Width: <span th:text="${width}"></span> pixels</p>
+    <p>Height: <span th:text="${height}"></span> pixels</p>
+
+    <h3>Select a region</h3>
+    <p>Drag over the image to select a rectangle.</p>
+    <div id="selectionArea">
+        <img id="screenshot" th:src="${imageData}" alt="Uploaded screenshot preview" draggable="false">
+        <div id="selectionBox"></div>
+    </div>
+    <p id="coordinates" aria-live="polite">Drag to select a region.</p>
+
+
+    <button type="button" id="ocrButton" disabled>
+        Read Text from Selected Region
+    </button>
+
+    <h3>OCR Result</h3>
+    <pre id="ocrResult">Select a region and click Read Text.</pre>
+
+
+    <section id="dateTimeEditor">
+        <h3>3. Choose date/time edit settings</h3>
+        <p>For authorized mockups and test images. The original upload remains unchanged.</p>
+
+        <div class="field">
+            <label><input type="radio" name="editMode" value="date" checked> Date only</label>
+            <label><input type="radio" name="editMode" value="time"> Time only</label>
+            <label><input type="radio" name="editMode" value="both"> Date and time</label>
+        </div>
+
+        <div class="field">
+            <label for="newDate">New date:</label>
+            <input type="date" id="newDate">
+        </div>
+        <div class="field">
+            <label for="newTime">New time:</label>
+            <input type="time" id="newTime">
+        </div>
+
+        <p id="editStatus" aria-live="polite">Select a region first.</p>
+        <button type="button" id="applyEditButton" disabled>Prepare Edit Settings</button>
+    </section>
+
+    <h3>4. Processed Preview</h3>
+    <img id="processedPreview" alt="Annotated selection preview">
+    <p><a id="downloadLink" style="display:none" download="annotated-preview.png">Download annotated PNG</a></p>
+</div>
+
+<script>
+    (() => {
+        const area = document.getElementById("selectionArea");
+        const img = document.getElementById("screenshot");
+        const box = document.getElementById("selectionBox");
+        const coordinates = document.getElementById("coordinates");
+        const ocrButton = document.getElementById("ocrButton");
+        const ocrResult = document.getElementById("ocrResult");
+        const editStatus = document.getElementById("editStatus");
+        const applyEditButton = document.getElementById("applyEditButton");
+        const newDateInput = document.getElementById("newDate");
+        const newTimeInput = document.getElementById("newTime");
+        const modeInputs = document.querySelectorAll('input[name="editMode"]');
+
+        // The initial upload page does not render these elements until an image exists.
+        if (!area || !img || !box || !coordinates || !ocrButton || !ocrResult ||
+            !editStatus || !applyEditButton || !newDateInput || !newTimeInput ||
+            modeInputs.length === 0) return;
+
+        let dragging = false;
+        let startX = 0, startY = 0, currentX = 0, currentY = 0;
+        let activePointerId = null;
+        let selectedRegion = null;
+        let requestInProgress = false;
+
+        ocrButton.disabled = true;
+        applyEditButton.disabled = true;
+
+        function getImagePoint(event) {
+            const rect = img.getBoundingClientRect();
+            return {
+                x: Math.max(0, Math.min(rect.width, event.clientX - rect.left)),
+                y: Math.max(0, Math.min(rect.height, event.clientY - rect.top))
+            };
+        }
+
+        function clearSelection(message) {
+            selectedRegion = null;
+            ocrButton.disabled = true;
+            applyEditButton.disabled = true;
+            box.style.display = "none";
+            editStatus.textContent = message || "Select a valid region first.";
+            ocrResult.textContent = "Select a region and click Read Text.";
+        }
+
+        function drawSelection() {
+            const left = Math.min(startX, currentX);
+            const top = Math.min(startY, currentY);
+            const width = Math.abs(currentX - startX);
+            const height = Math.abs(currentY - startY);
+            box.style.left = left + "px";
+            box.style.top = top + "px";
+            box.style.width = width + "px";
+            box.style.height = height + "px";
+            box.style.display = "block";
+            coordinates.textContent = `Displayed selection: x=${Math.round(left)}, y=${Math.round(top)}, width=${Math.round(width)}, height=${Math.round(height)}`;
+        }
+
+        function updateEditControls() {
+            const checkedMode = document.querySelector('input[name="editMode"]:checked');
+            if (!checkedMode) return;
+            const mode = checkedMode.value;
+            newDateInput.disabled = mode === "time";
+            newTimeInput.disabled = mode === "date";
+            if (!selectedRegion) {
+                editStatus.textContent = "Select a region first.";
+            } else if (mode === "date") {
+                editStatus.textContent = "Region selected. Choose the new date.";
+            } else if (mode === "time") {
+                editStatus.textContent = "Region selected. Choose the new time.";
+            } else {
+                editStatus.textContent = "Region selected. Choose the new date and time.";
+            }
+        }
+
+        async function imageBlobFromPreview() {
+            const response = await fetch(img.src);
+            if (!response.ok) throw new Error("Could not read the uploaded image.");
+            return await response.blob();
+        }
+
+        async function postMultipart(url, formData) {
+            const response = await fetch(url, { method: "POST", body: formData });
+            let result;
+            try {
+                result = await response.json();
+            } catch {
+                throw new Error("The server returned an unreadable response.");
+            }
+            if (!response.ok || !result.success) {
+                throw new Error(result.message || `Request failed (${response.status}).`);
+            }
+            return result;
+        }
+
+        async function submitSelection(region) {
+            const formData = new FormData();
+            formData.append("image", await imageBlobFromPreview(), "screenshot.png");
+            formData.append("x", String(region.x));
+            formData.append("y", String(region.y));
+            formData.append("width", String(region.width));
+            formData.append("height", String(region.height));
+            const result = await postMultipart("/selection", formData);
+            const preview = document.getElementById("processedPreview");
+            const downloadLink = document.getElementById("downloadLink");
+            if (preview && downloadLink && result.imageData) {
+                preview.src = result.imageData;
+                preview.style.display = "block";
+                downloadLink.href = result.imageData;
+                downloadLink.style.display = "inline-block";
+            }
+            return result;
+        }
+
+        area.addEventListener("pointerdown", event => {
+            if (!img.naturalWidth || !img.naturalHeight) return;
+            if (event.button !== undefined && event.button !== 0) return;
+            event.preventDefault();
+            const point = getImagePoint(event);
+            startX = currentX = point.x;
+            startY = currentY = point.y;
+            dragging = true;
+            activePointerId = event.pointerId;
+            clearSelection("Drag to select a valid region.");
+            if (area.setPointerCapture) area.setPointerCapture(event.pointerId);
+            drawSelection();
+        });
+
+        area.addEventListener("pointermove", event => {
+            if (!dragging || event.pointerId !== activePointerId) return;
+            const point = getImagePoint(event);
+            currentX = point.x;
+            currentY = point.y;
+            drawSelection();
+        });
+
+        area.addEventListener("pointerup", async event => {
+            if (!dragging || event.pointerId !== activePointerId) return;
+            const point = getImagePoint(event);
+            currentX = point.x;
+            currentY = point.y;
+            drawSelection();
+            dragging = false;
+            activePointerId = null;
+
+            const rect = img.getBoundingClientRect();
+            if (!rect.width || !rect.height) {
+                clearSelection("Image dimensions are unavailable. Please try again.");
+                return;
+            }
+
+            const scaleX = img.naturalWidth / rect.width;
+            const scaleY = img.naturalHeight / rect.height;
+            const left = Math.min(startX, currentX);
+            const top = Math.min(startY, currentY);
+            const displayWidth = Math.abs(currentX - startX);
+            const displayHeight = Math.abs(currentY - startY);
+            const x = Math.max(0, Math.min(img.naturalWidth - 1, Math.round(left * scaleX)));
+            const y = Math.max(0, Math.min(img.naturalHeight - 1, Math.round(top * scaleY)));
+            const right = Math.max(x + 1, Math.min(img.naturalWidth, Math.round((left + displayWidth) * scaleX)));
+            const bottom = Math.max(y + 1, Math.min(img.naturalHeight, Math.round((top + displayHeight) * scaleY)));
+            const width = right - x;
+            const height = bottom - y;
+
+            if (displayWidth < 2 || displayHeight < 2 || width < 1 || height < 1) {
+                clearSelection("Selection is too small. Drag a larger rectangle.");
+                coordinates.textContent = "Selection is too small. Drag a larger rectangle.";
+                return;
+            }
+
+            selectedRegion = { x, y, width, height };
+            ocrButton.disabled = false;
+            applyEditButton.disabled = false;
+            updateEditControls();
+            coordinates.textContent = `Selection complete: x=${x}, y=${y}, width=${width}, height=${height}. Processing annotation…`;
+
+            try {
+                const result = await submitSelection(selectedRegion);
+                coordinates.textContent = "Server response: " + (result.message || "Selection processed.");
+            } catch (error) {
+                coordinates.textContent = "Could not process selection: " + error.message;
+            }
+        });
+
+        function cancelPointerSelection() {
+            dragging = false;
+            activePointerId = null;
+            clearSelection("Selection cancelled. Please drag again.");
+            coordinates.textContent = "Selection cancelled. Please drag again.";
+        }
+        area.addEventListener("pointercancel", cancelPointerSelection);
+        area.addEventListener("lostpointercapture", () => {
+            if (dragging) cancelPointerSelection();
+        });
+
+        modeInputs.forEach(input => input.addEventListener("change", updateEditControls));
+
+        ocrButton.addEventListener("click", async () => {
+            if (!selectedRegion || requestInProgress) {
+                if (!selectedRegion) ocrResult.textContent = "Please select a valid region first.";
+                return;
+            }
+            requestInProgress = true;
+            ocrButton.disabled = true;
+            ocrResult.textContent = "Recognizing text…";
+            try {
+                const formData = new FormData();
+                formData.append("image", await imageBlobFromPreview(), "screenshot.png");
+                formData.append("x", String(selectedRegion.x));
+                formData.append("y", String(selectedRegion.y));
+                formData.append("width", String(selectedRegion.width));
+                formData.append("height", String(selectedRegion.height));
+                const result = await postMultipart("/ocr", formData);
+                // ocrResult.textContent = result.detectedText || "(No text detected in the selected region.)";
+
+
+                const text = result.detectedText || "(No text detected.)";
+
+
+                const candidates = result.candidates || [];
+
+                if (candidates.length === 0) {
+                    ocrResult.textContent +=
+                        "\n\nNo individual date/time candidates found. " +
+                        "Try selecting a tighter region around the text.";
+                } else {
+                    ocrResult.textContent += "\n\nDate/time candidates:\n";
+
+                    candidates.forEach((candidate, index) => {
+                        ocrResult.textContent +=
+                            `${index + 1}. ${candidate.type.toUpperCase()}: ` +
+                            `${candidate.text} ` +
+                            `(x=${candidate.x}, y=${candidate.y}, ` +
+                            `width=${candidate.width}, height=${candidate.height})\n`;
+                    });
+                }
+
+                console.log("OCR response:", result);
+            } catch (error) {
+                ocrResult.textContent = "OCR error: " + error.message;
+            } finally {
+                requestInProgress = false;
+                ocrButton.disabled = !selectedRegion;
+            }
+        });
+
+        applyEditButton.addEventListener("click", async () => {
+            if (!selectedRegion || requestInProgress) {
+                if (!selectedRegion) clearSelection("Please select a valid region first.");
+                return;
+            }
+            const checkedMode = document.querySelector('input[name="editMode"]:checked');
+            if (!checkedMode) {
+                editStatus.textContent = "Please choose an editing mode.";
+                return;
+            }
+            const mode = checkedMode.value;
+            const date = newDateInput.value;
+            const time = newTimeInput.value;
+            if (mode !== "time" && !date) {
+                editStatus.textContent = "Please choose a date.";
+                return;
+            }
+            if (mode !== "date" && !time) {
+                editStatus.textContent = "Please choose a time.";
+                return;
+            }
+
+            requestInProgress = true;
+            applyEditButton.disabled = true;
+            editStatus.textContent = "Sending settings to the server…";
+            try {
+                const formData = new FormData();
+                formData.append("image", await imageBlobFromPreview(), "screenshot.png");
+                formData.append("x", String(selectedRegion.x));
+                formData.append("y", String(selectedRegion.y));
+                formData.append("width", String(selectedRegion.width));
+                formData.append("height", String(selectedRegion.height));
+                formData.append("mode", mode);
+                if (mode !== "time") formData.append("newDate", date);
+                if (mode !== "date") formData.append("newTime", time);
+                const result = await postMultipart("/edit-mockup", formData);
+                editStatus.textContent = result.message + " Mode: " + result.mode +
+                    ". Region: " + result.x + ", " + result.y + ", " + result.width + " × " + result.height + ".";
+                console.log("Editing request:", result);
+            } catch (error) {
+                editStatus.textContent = "Could not prepare editing request: " + error.message;
+            } finally {
+                requestInProgress = false;
+                applyEditButton.disabled = !selectedRegion;
+            }
+        });
+
+        updateEditControls();
+    })();
+</script>
+</body>
+</html>
