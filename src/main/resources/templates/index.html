@@ -52,6 +52,10 @@
     <h3>OCR Result</h3>
     <pre id="ocrResult">Select a region and click Read Text.</pre>
 
+    <div id="ocrCandidates">
+        <p>Run OCR to find date/time candidates.</p>
+    </div>
+
 
     <section id="dateTimeEditor">
         <h3>3. Choose date/time edit settings</h3>
@@ -76,6 +80,73 @@
         <button type="button" id="applyEditButton" disabled>Prepare Edit Settings</button>
     </section>
 
+
+    <div class="field">
+        <label for="testReplacementText">Synthetic test replacement:</label>
+        <input
+                type="text"
+                id="testReplacementText"
+                value="TEST VALUE: 09:30"
+                maxlength="40">
+        <button type="button" id="renderTestButton" disabled>
+            Render Test Text
+        </button>
+    </div>
+
+    <p id="renderTestStatus" aria-live="polite"></p>
+
+    <div class="field">
+        <h3>Two-value synthetic test</h3>
+
+        <label for="testDateText">Test date text:</label>
+        <input type="text" id="testDateText"
+               value="TEST DATE: 07-10-2026" maxlength="40">
+
+        <br><br>
+
+        <label for="testTimeText">Test time text:</label>
+        <input type="text" id="testTimeText"
+               value="TEST TIME: 16:37" maxlength="40">
+
+        <br><br>
+
+        <button type="button" id="renderTwoTestButton" disabled>
+            Render Both Test Values
+        </button>
+
+        <p id="renderTwoTestStatus" aria-live="polite"></p>
+    </div>
+    <h4>Date region coordinates (pixels)</h4>
+
+    <label for="dateX">X:</label>
+    <input type="number" id="dateX" value="15" min="0">
+
+    <label for="dateY">Y:</label>
+    <input type="number" id="dateY" value="30" min="0">
+
+    <label for="dateWidth">Width:</label>
+    <input type="number" id="dateWidth" value="220" min="1">
+
+    <label for="dateHeight">Height:</label>
+    <input type="number" id="dateHeight" value="30" min="1">
+
+    <h4>Time region coordinates (pixels)</h4>
+
+    <label for="timeX">X:</label>
+    <input type="number" id="timeX" value="15" min="0">
+
+    <label for="timeY">Y:</label>
+    <input type="number" id="timeY" value="80" min="0">
+
+    <label for="timeWidth">Width:</label>
+    <input type="number" id="timeWidth" value="180" min="1">
+
+    <label for="timeHeight">Height:</label>
+    <input type="number" id="timeHeight" value="30" min="1">
+
+    <br><br>
+
+
     <h3>4. Processed Preview</h3>
     <img id="processedPreview" alt="Annotated selection preview">
     <p><a id="downloadLink" style="display:none" download="annotated-preview.png">Download annotated PNG</a></p>
@@ -94,6 +165,35 @@
         const newDateInput = document.getElementById("newDate");
         const newTimeInput = document.getElementById("newTime");
         const modeInputs = document.querySelectorAll('input[name="editMode"]');
+        const ocrCandidates = document.getElementById("ocrCandidates");
+
+        // Test replacement references
+        const testReplacementText =
+            document.getElementById("testReplacementText");
+        const renderTestButton =
+            document.getElementById("renderTestButton");
+        const renderTestStatus =
+            document.getElementById("renderTestStatus");
+
+
+
+        const testDateText = document.getElementById("testDateText");
+        const testTimeText = document.getElementById("testTimeText");
+
+        const dateXInput = document.getElementById("dateX");
+        const dateYInput = document.getElementById("dateY");
+        const dateWidthInput = document.getElementById("dateWidth");
+        const dateHeightInput = document.getElementById("dateHeight");
+
+        const timeXInput = document.getElementById("timeX");
+        const timeYInput = document.getElementById("timeY");
+        const timeWidthInput = document.getElementById("timeWidth");
+        const timeHeightInput = document.getElementById("timeHeight");
+
+        const renderTwoTestButton =
+            document.getElementById("renderTwoTestButton");
+        const renderTwoTestStatus =
+            document.getElementById("renderTwoTestStatus");
 
         // The initial upload page does not render these elements until an image exists.
         if (!area || !img || !box || !coordinates || !ocrButton || !ocrResult ||
@@ -108,7 +208,7 @@
 
         ocrButton.disabled = true;
         applyEditButton.disabled = true;
-
+        renderTestButton.disabled = true;
         function getImagePoint(event) {
             const rect = img.getBoundingClientRect();
             return {
@@ -121,6 +221,12 @@
             selectedRegion = null;
             ocrButton.disabled = true;
             applyEditButton.disabled = true;
+            if (renderTestButton) {
+                renderTestButton.disabled = true;
+            }
+            if (renderTwoTestButton) {
+                renderTwoTestButton.disabled = true;
+            }
             box.style.display = "none";
             editStatus.textContent = message || "Select a valid region first.";
             ocrResult.textContent = "Select a region and click Read Text.";
@@ -254,6 +360,10 @@
             selectedRegion = { x, y, width, height };
             ocrButton.disabled = false;
             applyEditButton.disabled = false;
+            renderTestButton.disabled = false;
+            if (renderTwoTestButton) {
+                renderTwoTestButton.disabled = false;
+            }
             updateEditControls();
             coordinates.textContent = `Selection complete: x=${x}, y=${y}, width=${width}, height=${height}. Processing annotation…`;
 
@@ -298,10 +408,48 @@
 
 
                 const text = result.detectedText || "(No text detected.)";
-
-
                 const candidates = result.candidates || [];
 
+
+                ocrCandidates.replaceChildren();
+
+                if (candidates.length === 0) {
+                    const message = document.createElement("p");
+                    message.textContent = "No date/time candidates found.";
+                    ocrCandidates.appendChild(message);
+                } else {
+                    candidates.forEach((candidate, index) => {
+                        const label = document.createElement("label");
+                        label.style.display = "block";
+                        label.style.margin = "8px 0";
+
+                        const radio = document.createElement("input");
+                        radio.addEventListener("change", () => {
+                            updateEditModeFromCandidates();
+                            populateFieldsFromCandidates();
+                        });
+                        radio.type = "checkbox";
+                        radio.name = "ocrCandidate";
+                        radio.value = String(index);
+                        radio.dataset.type = candidate.type;
+
+                        const description = document.createElement("span");
+                        description.textContent =
+                            ` ${candidate.type.toUpperCase()}: ${candidate.text}` +
+                            ` (x=${candidate.x}, y=${candidate.y}, ` +
+                            `width=${candidate.width}, height=${candidate.height})`;
+
+                        label.appendChild(radio);
+                        label.appendChild(description);
+                        ocrCandidates.appendChild(label);
+                    });
+                }
+
+
+                // First, display the complete OCR text.
+                ocrResult.textContent = "Detected text:\n" + text;
+
+            // Then, display date/time candidates.
                 if (candidates.length === 0) {
                     ocrResult.textContent +=
                         "\n\nNo individual date/time candidates found. " +
@@ -312,9 +460,9 @@
                     candidates.forEach((candidate, index) => {
                         ocrResult.textContent +=
                             `${index + 1}. ${candidate.type.toUpperCase()}: ` +
-                            `${candidate.text} ` +
-                            `(x=${candidate.x}, y=${candidate.y}, ` +
-                            `width=${candidate.width}, height=${candidate.height})\n`;
+                            `${candidate.text}\n` +
+                            `   Position: x=${candidate.x}, y=${candidate.y}\n` +
+                            `   Size: width=${candidate.width}, height=${candidate.height}\n\n`;
                     });
                 }
 
@@ -362,10 +510,32 @@
                 formData.append("mode", mode);
                 if (mode !== "time") formData.append("newDate", date);
                 if (mode !== "date") formData.append("newTime", time);
+
+
                 const result = await postMultipart("/edit-mockup", formData);
-                editStatus.textContent = result.message + " Mode: " + result.mode +
-                    ". Region: " + result.x + ", " + result.y + ", " + result.width + " × " + result.height + ".";
-                console.log("Editing request:", result);
+
+                editStatus.textContent =
+                    result.message + " Mode: " + result.mode +
+                    ". Region: " + result.x + ", " + result.y + ", " +
+                    result.width + " × " + result.height + ".";
+
+                const preview = document.getElementById("processedPreview");
+                const downloadLink = document.getElementById("downloadLink");
+
+                if (result.imageData && preview && downloadLink) {
+                    preview.src = result.imageData;
+                    preview.alt = "Generated mockup preview";
+                    preview.style.display = "block";
+
+                    downloadLink.href = result.imageData;
+                    downloadLink.download = "screenshot-mockup.png";
+                    downloadLink.textContent = "Download mockup PNG";
+                    downloadLink.style.display = "inline-block";
+                }
+
+                console.log("Mockup response:", result);
+
+
             } catch (error) {
                 editStatus.textContent = "Could not prepare editing request: " + error.message;
             } finally {
@@ -373,6 +543,248 @@
                 applyEditButton.disabled = !selectedRegion;
             }
         });
+
+
+        function updateEditModeFromCandidates() {
+            const selected = Array.from(
+                ocrCandidates.querySelectorAll(
+                    'input[name="ocrCandidate"]:checked'
+                )
+            );
+
+            const selectedTypes = new Set(
+                selected.map(input => input.dataset.type)
+            );
+
+            const dateRadio = document.querySelector(
+                'input[name="editMode"][value="date"]'
+            );
+            const timeRadio = document.querySelector(
+                'input[name="editMode"][value="time"]'
+            );
+            const bothRadio = document.querySelector(
+                'input[name="editMode"][value="both"]'
+            );
+
+            if (selectedTypes.has("date") && selectedTypes.has("time")) {
+                if (bothRadio) bothRadio.checked = true;
+            } else if (selectedTypes.has("date")) {
+                if (dateRadio) dateRadio.checked = true;
+            } else if (selectedTypes.has("time")) {
+                if (timeRadio) timeRadio.checked = true;
+            }
+
+            updateEditControls();
+        }
+
+
+        function populateFieldsFromCandidates() {
+            const selected = Array.from(
+                ocrCandidates.querySelectorAll(
+                    'input[name="ocrCandidate"]:checked'
+                )
+            );
+
+            const dateCandidate = selected.find(
+                input => input.dataset.type === "date"
+            );
+
+            const timeCandidate = selected.find(
+                input => input.dataset.type === "time"
+            );
+
+            const dateText = dateCandidate
+                ? dateCandidate.parentElement.textContent
+                : "";
+
+            const timeText = timeCandidate
+                ? timeCandidate.parentElement.textContent
+                : "";
+
+            const dateMatch = dateText.match(
+                /\b(\d{1,2})[-/](\d{1,2})[-/](\d{4})\b/
+            );
+
+            const timeMatch = timeText.match(
+                /\b(\d{1,2}):(\d{2})(?:\s*(AM|PM))?\b/i
+            );
+
+            const dateInput = document.getElementById("newDate");
+            const timeInput = document.getElementById("newTime");
+
+            if (dateMatch && dateInput) {
+                const [, day, month, year] = dateMatch;
+
+                dateInput.value =
+                    `${year}-${month.padStart(2, "0")}-${day.padStart(2, "0")}`;
+            }
+
+            if (timeMatch && timeInput) {
+                let hours = Number(timeMatch[1]);
+                const minutes = timeMatch[2];
+                const period = timeMatch[3]?.toUpperCase();
+
+                if (period === "PM" && hours < 12) hours += 12;
+                if (period === "AM" && hours === 12) hours = 0;
+
+                timeInput.value =
+                    `${String(hours).padStart(2, "0")}:${minutes}`;
+            }
+        }
+
+        renderTestButton.addEventListener("click", async () => {
+            if (!selectedRegion || requestInProgress) return;
+
+            const replacementText = testReplacementText.value.trim();
+
+            if (!replacementText) {
+                renderTestStatus.textContent =
+                    "Enter a test value first.";
+                return;
+            }
+
+            requestInProgress = true;
+            renderTestButton.disabled = true;
+            renderTestStatus.textContent = "Rendering test image…";
+
+            try {
+                const formData = new FormData();
+                formData.append(
+                    "image",
+                    await imageBlobFromPreview(),
+                    "synthetic-test.png"
+                );
+                formData.append("x", String(selectedRegion.x));
+                formData.append("y", String(selectedRegion.y));
+                formData.append("width", String(selectedRegion.width));
+                formData.append("height", String(selectedRegion.height));
+                formData.append("replacementText", replacementText);
+
+                const result = await postMultipart("/render-test", formData);
+
+                const preview = document.getElementById("processedPreview");
+                const downloadLink = document.getElementById("downloadLink");
+
+                preview.src = result.imageData;
+                preview.alt = "Synthetic test rendering preview";
+                preview.style.display = "block";
+
+                downloadLink.href = result.imageData;
+                downloadLink.download = "synthetic-test-output.png";
+                downloadLink.textContent = "Download test output PNG";
+                downloadLink.style.display = "inline-block";
+
+                renderTestStatus.textContent = result.message;
+            } catch (error) {
+                renderTestStatus.textContent =
+                    "Test rendering failed: " + error.message;
+            } finally {
+                requestInProgress = false;
+                renderTestButton.disabled = !selectedRegion;
+            }
+        });
+
+        if (renderTwoTestButton) {
+            renderTwoTestButton.addEventListener("click", async () => {
+                if (!selectedRegion || requestInProgress) {
+                    renderTwoTestStatus.textContent =
+                        "Select a valid region first.";
+                    return;
+                }
+
+                const dateText = testDateText.value.trim();
+                const timeText = testTimeText.value.trim();
+
+                if (!dateText && !timeText) {
+                    renderTwoTestStatus.textContent =
+                        "Enter a test date or test time.";
+                    return;
+                }
+
+                const fields = [
+                    dateXInput, dateYInput, dateWidthInput, dateHeightInput,
+                    timeXInput, timeYInput, timeWidthInput, timeHeightInput
+                ];
+
+                if (fields.some(field => !field || field.value.trim() === "" ||
+                    !Number.isFinite(Number(field.value)))) {
+                    renderTwoTestStatus.textContent =
+                        "Enter valid numeric coordinates for both regions.";
+                    return;
+                }
+
+                requestInProgress = true;
+                renderTwoTestButton.disabled = true;
+                renderTwoTestStatus.textContent = "Rendering test values…";
+                console.log("Date region:", {
+                    x: dateXInput.value,
+                    y: dateYInput.value,
+                    width: dateWidthInput.value,
+                    height: dateHeightInput.value
+                });
+
+                console.log("Time region:", {
+                    x: timeXInput.value,
+                    y: timeYInput.value,
+                    width: timeWidthInput.value,
+                    height: timeHeightInput.value
+                });
+
+                try {
+                    const formData = new FormData();
+
+                    formData.append(
+                        "image",
+                        await imageBlobFromPreview(),
+                        "synthetic-test.png"
+                    );
+
+                    // Date region coordinates
+                    formData.append("dateX", dateXInput.value);
+                    formData.append("dateY", dateYInput.value);
+                    formData.append("dateWidth", dateWidthInput.value);
+                    formData.append("dateHeight", dateHeightInput.value);
+
+                 // Time region coordinates
+                    formData.append("timeX", timeXInput.value);
+                    formData.append("timeY", timeYInput.value);
+                    formData.append("timeWidth", timeWidthInput.value);
+                    formData.append("timeHeight", timeHeightInput.value);
+
+                    formData.append("newDate", dateText);
+                    formData.append("newTime", timeText);
+
+                    const result = await postMultipart(
+                        "/render-two-test",
+                        formData
+                    );
+
+                    const preview =
+                        document.getElementById("processedPreview");
+                    const downloadLink =
+                        document.getElementById("downloadLink");
+
+                    preview.src = result.imageData;
+                    preview.alt = "Synthetic test rendering preview";
+                    preview.style.display = "block";
+
+                    downloadLink.href = result.imageData;
+                    downloadLink.download = "synthetic-test-output.png";
+                    downloadLink.textContent = "Download test output PNG";
+                    downloadLink.style.display = "inline-block";
+
+                    renderTwoTestStatus.textContent = result.message;
+                } catch (error) {
+                    renderTwoTestStatus.textContent =
+                        "Rendering failed: " + error.message;
+                } finally {
+                    requestInProgress = false;
+                    renderTwoTestButton.disabled = !selectedRegion;
+                }
+            });
+        }
+
+
 
         updateEditControls();
     })();
