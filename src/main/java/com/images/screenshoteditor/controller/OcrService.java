@@ -20,11 +20,9 @@ public class OcrService {
     @Value("${tesseract.datapath:C:/Users/rahulsrivastav/AppData/Local/Tesseract-OCR/tessdata}")
     private String tessDataPath;
 
-    public String recognizeText(BufferedImage image)
-            throws TesseractException {
+    public String recognizeText(BufferedImage image) throws TesseractException {
 
         ITesseract tesseract = new Tesseract();
-
         tesseract.setDatapath(tessDataPath);
         tesseract.setLanguage("eng");
         tesseract.setPageSegMode(6);
@@ -32,11 +30,8 @@ public class OcrService {
         return tesseract.doOCR(image).trim();
     }
 
-    public List<Word> recognizeWords(BufferedImage image)
-            throws TesseractException {
-
+    public List<Word> recognizeWords(BufferedImage image) throws TesseractException {
         ITesseract tesseract = new Tesseract();
-
         tesseract.setDatapath(tessDataPath);
         tesseract.setLanguage("eng");
         tesseract.setPageSegMode(6);

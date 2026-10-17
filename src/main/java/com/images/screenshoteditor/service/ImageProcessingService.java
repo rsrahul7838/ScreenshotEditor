@@ -12,8 +12,6 @@ import java.io.IOException;
 @Service
 public class ImageProcessingService {
 
-
-
     public BufferedImage addAnnotation(
             BufferedImage original,
             int x,
@@ -47,19 +45,12 @@ public class ImageProcessingService {
             // Label the selection for testing
             graphics.setColor(Color.YELLOW);
             graphics.fillRect(x, Math.max(0, y - 24), 150, 22);
-
             graphics.setColor(Color.BLACK);
             graphics.setFont(new Font(Font.SANS_SERIF, Font.PLAIN, 10));
-            graphics.drawString(
-                    "SELECTED REGION",
-                    x + 5,
-                    Math.max(15, y - 8)
-            );
-
+            graphics.drawString("SELECTED REGION",x + 5,Math.max(15, y - 8));
         } finally {
             graphics.dispose();
         }
-
         return copy;
     }
 
@@ -71,13 +62,11 @@ public class ImageProcessingService {
         );
 
         Graphics2D graphics = copy.createGraphics();
-
         try {
             graphics.drawImage(original, 0, 0, null);
         } finally {
             graphics.dispose();
         }
-
         return copy;
     }
 
@@ -90,10 +79,8 @@ public class ImageProcessingService {
             int height,
             String replacementText) {
 
-        if (original == null || replacementText == null
-                || replacementText.isBlank()) {
-            throw new IllegalArgumentException(
-                    "Image and replacement text are required.");
+        if (original == null || replacementText == null || replacementText.isBlank()) {
+            throw new IllegalArgumentException("Image and replacement text are required.");
         }
 
         if (x < 0 || y < 0 || width <= 0 || height <= 0
@@ -113,24 +100,17 @@ public class ImageProcessingService {
             // test image, whose text is on a white background.
             graphics.setColor(new Color(218, 233, 242));
             graphics.fillRect(x, y, width, height);
-
             graphics.setColor(Color.BLACK);
-            graphics.setFont(new Font("Segoe UI", Font.PLAIN, 12));
-
+            graphics.setFont(new Font("Arial", Font.PLAIN, 12));
 
             java.awt.FontMetrics metrics = graphics.getFontMetrics();
             int textY = y + (height - metrics.getHeight()) / 2
                     + metrics.getAscent();
-
-
             int textX = x + width - metrics.stringWidth(replacementText) - 2;
-
-
             graphics.drawString(replacementText, textX, textY);
         } finally {
             graphics.dispose();
         }
-
         return copy;
     }
 
@@ -167,7 +147,6 @@ public class ImageProcessingService {
                     newTime
             );
         }
-
         return output;
     }
 
@@ -180,8 +159,4 @@ public class ImageProcessingService {
                 && y1 < y2 + h2
                 && y1 + h1 > y2;
     }
-
-
-
-
 }

@@ -6,17 +6,14 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.multipart.MultipartFile;
 import com.images.screenshoteditor.service.ImageProcessingService;
-
 import org.springframework.web.bind.annotation.ResponseBody;
 import java.util.Map;
 import java.util.HashMap;
-
 import javax.imageio.ImageIO;
 import java.awt.image.BufferedImage;
 import java.io.IOException;
 import java.util.Base64;
 import java.util.Locale;
-
 
 import net.sourceforge.tess4j.Word;
 
@@ -25,21 +22,11 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
-import java.awt.image.BufferedImage;
-import java.io.IOException;
-import java.util.HashMap;
-import java.util.Map;
-import javax.imageio.ImageIO;
-
-
-
 @Controller
 public class UploadController {
 
     private static final long MAX_FILE_SIZE = 5 * 1024 * 1024;
     private static final long MAX_PIXELS = 25_000_000L;
-
-
     // one Spring component uses another Spring component through dependency injection.
     private final ImageProcessingService imageProcessingService;
     private final OcrService ocrService;
@@ -118,36 +105,19 @@ public class UploadController {
             String format = filename.toLowerCase(Locale.ROOT)
                     .endsWith(".png") ? "png" : "jpeg";
 
-        //            java.io.ByteArrayOutputStream output =
-        //                    new java.io.ByteArrayOutputStream();
-        //
-        //            ImageIO.write(image, format, output);
-
-        //            ======================
-
             // Process the uploaded image using our service
-
-        // Convert the processed copy to bytes
-            java.io.ByteArrayOutputStream output =
-                    new java.io.ByteArrayOutputStream();
-
+           // Convert the processed copy to bytes
+            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
             ImageIO.write(image, format, output);
-
-            String base64 = Base64.getEncoder()
-                    .encodeToString(output.toByteArray());
-
-            model.addAttribute("imageData",
-                    "data:image/" + format + ";base64," + base64);
-
+            String base64 = Base64.getEncoder().encodeToString(output.toByteArray());
+            model.addAttribute("imageData","data:image/" + format + ";base64," + base64);
             model.addAttribute("width", image.getWidth());
             model.addAttribute("height", image.getHeight());
             model.addAttribute("message", "Image uploaded successfully!");
-
         } catch (IOException ex) {
             model.addAttribute(
                     "error", "Could not read the image. Please try another file.");
         }
-
         return "index";
     }
 
@@ -172,8 +142,7 @@ public class UploadController {
                 return response;
             }
 
-            BufferedImage original =
-                    ImageIO.read(file.getInputStream());
+            BufferedImage original = ImageIO.read(file.getInputStream());
 
             if (original == null) {
                 response.put("success", false);
@@ -201,156 +170,21 @@ public class UploadController {
                             original, x, y, width, height);
 
             // Encode the processed copy as PNG for browser preview.
-            java.io.ByteArrayOutputStream output =
-                    new java.io.ByteArrayOutputStream();
-
+            java.io.ByteArrayOutputStream output = new java.io.ByteArrayOutputStream();
             ImageIO.write(processed, "png", output);
-
-            String base64 = java.util.Base64.getEncoder()
-                    .encodeToString(output.toByteArray());
-
+            String base64 = java.util.Base64.getEncoder().encodeToString(output.toByteArray());
             response.put("success", true);
             response.put("message", "Image processed successfully!");
             response.put("imageData", "data:image/png;base64," + base64);
             response.put("width", imageWidth);
             response.put("height", imageHeight);
-
         } catch (IOException ex) {
             response.put("success", false);
             response.put("message", "Could not process the uploaded image.");
         }
-
         return response;
     }
 
-
-
-    @PostMapping(
-            value = "/edit-mockup",
-            consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE
-    )
-    @ResponseBody
-    public Map<String, Object> editMockup(
-            @RequestParam("image") MultipartFile file,
-            @RequestParam int x,
-            @RequestParam int y,
-            @RequestParam int width,
-            @RequestParam int height,
-            @RequestParam String mode,
-            @RequestParam(required = false) String newDate,
-            @RequestParam(required = false) String newTime
-    ) {
-        Map<String, Object> result = new HashMap<>();
-
-        try {
-            if (file.isEmpty()) {
-                throw new IllegalArgumentException("Please upload an image.");
-            }
-
-            if (file.getSize() > MAX_FILE_SIZE) {
-                throw new IllegalArgumentException(
-                        "Image must be 5 MB or smaller."
-                );
-            }
-
-            BufferedImage image = ImageIO.read(file.getInputStream());
-
-            BufferedImage outputImage =
-                    imageProcessingService.createMockupCopy(image);
-
-            java.io.ByteArrayOutputStream outputStream =
-                    new java.io.ByteArrayOutputStream();
-
-            boolean pngWritten = ImageIO.write(
-                    outputImage,
-                    "png",
-                    outputStream
-            );
-
-            if (!pngWritten) {
-                throw new IllegalArgumentException(
-                        "Could not generate the mockup PNG."
-                );
-            }
-
-            String imageData = "data:image/png;base64," +
-                    java.util.Base64.getEncoder().encodeToString(
-                            outputStream.toByteArray()
-                    );
-
-            result.put("imageData", imageData);
-            result.put("outputWidth", outputImage.getWidth());
-            result.put("outputHeight", outputImage.getHeight());
-
-
-            if (image == null) {
-                throw new IllegalArgumentException(
-                        "The uploaded file is not a valid image."
-                );
-            }
-
-            if (x < 0 || y < 0 || width <= 0 || height <= 0
-                    || x >= image.getWidth()
-                    || y >= image.getHeight()
-                    || width > image.getWidth() - x
-                    || height > image.getHeight() - y) {
-                throw new IllegalArgumentException(
-                        "The selected region is outside the image."
-                );
-            }
-
-            if (!mode.equals("date")
-                    && !mode.equals("time")
-                    && !mode.equals("both")) {
-                throw new IllegalArgumentException(
-                        "Invalid editing mode."
-                );
-            }
-
-            if (!mode.equals("time")) {
-                if (newDate == null || newDate.isBlank()) {
-                    throw new IllegalArgumentException(
-                            "Please choose a date."
-                    );
-                }
-
-                java.time.LocalDate.parse(newDate);
-            }
-
-            if (!mode.equals("date")) {
-                if (newTime == null || newTime.isBlank()) {
-                    throw new IllegalArgumentException(
-                            "Please choose a time."
-                    );
-                }
-
-                java.time.LocalTime.parse(newTime);
-            }
-           //  Mockup output image prepared.
-            result.put("success", true);
-            result.put("message", "Mockup output image prepared.");
-            result.put("outputWidth", outputImage.getWidth());
-            result.put("outputHeight", outputImage.getHeight());
-            result.put("mode", mode);
-            result.put("newDate", newDate);
-            result.put("newTime", newTime);
-            result.put("x", x);
-            result.put("y", y);
-            result.put("width", width);
-            result.put("height", height);
-
-        } catch (IllegalArgumentException
-                 | java.time.DateTimeException e) {
-            result.put("success", false);
-            result.put("message", "Invalid input: " + e.getMessage());
-
-        } catch (IOException e) {
-            result.put("success", false);
-            result.put("message", "Could not read the uploaded image.");
-        }
-
-        return result;
-    }
 
     @PostMapping(
             value = "/ocr",
@@ -372,10 +206,7 @@ public class UploadController {
                         "Upload a valid image of 5 MB or smaller."
                 );
             }
-
-            BufferedImage original =
-                    ImageIO.read(file.getInputStream());
-
+            BufferedImage original = ImageIO.read(file.getInputStream());
             if (original == null) {
                 throw new IllegalArgumentException(
                         "The uploaded file is not a valid image."
@@ -384,29 +215,19 @@ public class UploadController {
 
             int imageWidth = original.getWidth();
             int imageHeight = original.getHeight();
-
             if (x < 0 || y < 0 || width <= 0 || height <= 0
                     || x >= imageWidth || y >= imageHeight
                     || width > imageWidth - x
                     || height > imageHeight - y) {
-                throw new IllegalArgumentException(
-                        "The selected region is outside the image."
-                );
+                throw new IllegalArgumentException("The selected region is outside the image.");
             }
 
-            BufferedImage cropped = original.getSubimage(
-                    x, y, width, height
-            );
-
-
+            BufferedImage cropped = original.getSubimage(x, y, width, height);
             String detectedText = ocrService.recognizeText(cropped);
-
             List<Word> words = ocrService.recognizeWords(cropped);
             List<Map<String, Object>> wordResults = new ArrayList<>();
-
             for (Word word : words) {
                 Rectangle box = word.getBoundingBox();
-
                 if (box == null) {
                     continue;
                 }
@@ -420,7 +241,6 @@ public class UploadController {
                 item.put("width", box.width);
                 item.put("height", box.height);
                 item.put("confidence", word.getConfidence());
-
                 wordResults.add(item);
             }
 
@@ -444,7 +264,6 @@ public class UploadController {
 
                 String text = String.valueOf(word.get("text")).trim();
                 String type = null;
-
                 // Detect a complete date in one OCR word.
                 if (datePattern.matcher(text).matches()) {
                     type = "date";
@@ -459,11 +278,8 @@ public class UploadController {
                 // combine adjacent words for detection.
                 if (type == null && i + 1 < wordResults.size()) {
                     Map<String, Object> nextWord = wordResults.get(i + 1);
-                    String nextText =
-                            String.valueOf(nextWord.get("text")).trim();
-
+                    String nextText = String.valueOf(nextWord.get("text")).trim();
                     String combinedText = text + " " + nextText;
-
                     if (timePattern.matcher(combinedText).matches()) {
                         type = "time";
                         text = combinedText;
@@ -484,35 +300,27 @@ public class UploadController {
                 }
             }
 
-
             result.put("success", true);
             result.put("message", "OCR completed successfully.");
             result.put("detectedText", detectedText);
             result.put("detectedWords", wordResults);
-            result.put("candidates", candidates);
-            result.put("dateCandidate",
-                    candidates.stream().anyMatch(c -> "date".equals(c.get("type"))));
-            result.put("timeCandidate",
-                    candidates.stream().anyMatch(c -> "time".equals(c.get("type"))));
+            result.put("candidates",candidates);
+            result.put("dateCandidate",candidates.stream().anyMatch(c -> "date".equals(c.get("type"))));
+            result.put("timeCandidate",candidates.stream().anyMatch(c -> "time".equals(c.get("type"))));
             result.put("x", x);
             result.put("y", y);
             result.put("width", width);
             result.put("height", height);
-
         } catch (IllegalArgumentException e) {
             result.put("success", false);
             result.put("message", e.getMessage());
-
         } catch (IOException e) {
             result.put("success", false);
-            result.put("message", "Could not read the uploaded image.");
-
+            result.put("message","Could not read the uploaded image.");
         } catch (net.sourceforge.tess4j.TesseractException e) {
             result.put("success", false);
-            result.put("message",
-                    "OCR failed. Check the Tesseract installation and language data.");
+            result.put("message","OCR failed. Check the Tesseract installation and language data.");
         }
-
         return result;
     }
 
@@ -538,21 +346,13 @@ public class UploadController {
             }
 
             BufferedImage image = ImageIO.read(file.getInputStream());
-
             if (image == null) {
                 throw new IllegalArgumentException("Invalid image file.");
             }
 
-            BufferedImage outputImage =
-                    imageProcessingService.renderTestText(
-                            image, x, y, width, height, replacementText
-                    );
-
-            java.io.ByteArrayOutputStream outputStream =
-                    new java.io.ByteArrayOutputStream();
-
+            BufferedImage outputImage = imageProcessingService.renderTestText(image, x, y, width, height, replacementText);
+            java.io.ByteArrayOutputStream outputStream = new java.io.ByteArrayOutputStream();
             ImageIO.write(outputImage, "png", outputStream);
-
             String imageData = "data:image/png;base64," +
                     java.util.Base64.getEncoder().encodeToString(
                             outputStream.toByteArray()
@@ -563,16 +363,13 @@ public class UploadController {
             result.put("imageData", imageData);
             result.put("outputWidth", outputImage.getWidth());
             result.put("outputHeight", outputImage.getHeight());
-
         } catch (IllegalArgumentException e) {
             result.put("success", false);
             result.put("message", e.getMessage());
-
         } catch (IOException e) {
             result.put("success", false);
             result.put("message", "Could not read or render the test image.");
         }
-
         return result;
     }
 
@@ -659,7 +456,133 @@ public class UploadController {
             result.put("success", false);
             result.put("message", "Could not read or render the test image.");
         }
-
         return result;
     }
+
+    //    @PostMapping(
+    //            value = "/edit-mockup",
+    //            consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE
+    //    )
+    //    @ResponseBody
+    //    public Map<String, Object> editMockup(
+    //            @RequestParam("image") MultipartFile file,
+    //            @RequestParam int x,
+    //            @RequestParam int y,
+    //            @RequestParam int width,
+    //            @RequestParam int height,
+    //            @RequestParam String mode,
+    //            @RequestParam(required = false) String newDate,
+    //            @RequestParam(required = false) String newTime
+    //    ) {
+    //        Map<String, Object> result = new HashMap<>();
+    //
+    //        try {
+    //            if (file.isEmpty()) {
+    //                throw new IllegalArgumentException("Please upload an image.");
+    //            }
+    //
+    //            if (file.getSize() > MAX_FILE_SIZE) {
+    //                throw new IllegalArgumentException(
+    //                        "Image must be 5 MB or smaller."
+    //                );
+    //            }
+    //
+    //            BufferedImage image = ImageIO.read(file.getInputStream());
+    //
+    //            BufferedImage outputImage =
+    //                    imageProcessingService.createMockupCopy(image);
+    //
+    //            java.io.ByteArrayOutputStream outputStream =
+    //                    new java.io.ByteArrayOutputStream();
+    //
+    //            boolean pngWritten = ImageIO.write(
+    //                    outputImage,
+    //                    "png",
+    //                    outputStream
+    //            );
+    //
+    //            if (!pngWritten) {
+    //                throw new IllegalArgumentException(
+    //                        "Could not generate the mockup PNG."
+    //                );
+    //            }
+    //
+    //            String imageData = "data:image/png;base64," +
+    //                    java.util.Base64.getEncoder().encodeToString(
+    //                            outputStream.toByteArray()
+    //                    );
+    //
+    //            result.put("imageData", imageData);
+    //            result.put("outputWidth", outputImage.getWidth());
+    //            result.put("outputHeight", outputImage.getHeight());
+    //
+    //
+    //            if (image == null) {
+    //                throw new IllegalArgumentException(
+    //                        "The uploaded file is not a valid image."
+    //                );
+    //            }
+    //
+    //            if (x < 0 || y < 0 || width <= 0 || height <= 0
+    //                    || x >= image.getWidth()
+    //                    || y >= image.getHeight()
+    //                    || width > image.getWidth() - x
+    //                    || height > image.getHeight() - y) {
+    //                throw new IllegalArgumentException(
+    //                        "The selected region is outside the image."
+    //                );
+    //            }
+    //
+    //            if (!mode.equals("date")
+    //                    && !mode.equals("time")
+    //                    && !mode.equals("both")) {
+    //                throw new IllegalArgumentException(
+    //                        "Invalid editing mode."
+    //                );
+    //            }
+    //
+    //            if (!mode.equals("time")) {
+    //                if (newDate == null || newDate.isBlank()) {
+    //                    throw new IllegalArgumentException(
+    //                            "Please choose a date."
+    //                    );
+    //                }
+    //
+    //                java.time.LocalDate.parse(newDate);
+    //            }
+    //
+    //            if (!mode.equals("date")) {
+    //                if (newTime == null || newTime.isBlank()) {
+    //                    throw new IllegalArgumentException(
+    //                            "Please choose a time."
+    //                    );
+    //                }
+    //
+    //                java.time.LocalTime.parse(newTime);
+    //            }
+    //           //  Mockup output image prepared.
+    //            result.put("success", true);
+    //            result.put("message", "Mockup output image prepared.");
+    //            result.put("outputWidth", outputImage.getWidth());
+    //            result.put("outputHeight", outputImage.getHeight());
+    //            result.put("mode", mode);
+    //            result.put("newDate", newDate);
+    //            result.put("newTime", newTime);
+    //            result.put("x", x);
+    //            result.put("y", y);
+    //            result.put("width", width);
+    //            result.put("height", height);
+    //
+    //        } catch (IllegalArgumentException
+    //                 | java.time.DateTimeException e) {
+    //            result.put("success", false);
+    //            result.put("message", "Invalid input: " + e.getMessage());
+    //
+    //        } catch (IOException e) {
+    //            result.put("success", false);
+    //            result.put("message", "Could not read the uploaded image.");
+    //        }
+    //
+    //        return result;
+    //    }
 }
